@@ -19,10 +19,6 @@ active_timers = {}
 
 DB_PATH = "donations.db"
 
-db_dir = os.path.dirname(DB_PATH)
-if db_dir:
-    os.makedirs(db_dir, exist_ok=True)
-
 
 def init_donation_db():
     conn = sqlite3.connect(DB_PATH)
@@ -51,19 +47,19 @@ def generate_beep_wav():
     wav_data = bytearray()
     data_size = num_samples * 2
 
-    wav_data += b'RIFF'
-    wav_data += struct.pack('<I', 36 + data_size)
-    wav_data += b'WAVE'
-    wav_data += b'fmt '
-    wav_data += struct.pack('<I', 16)
-    wav_data += struct.pack('<H', 1)
-    wav_data += struct.pack('<H', 1)
-    wav_data += struct.pack('<I', sample_rate)
-    wav_data += struct.pack('<I', sample_rate * 2)
-    wav_data += struct.pack('<H', 2)
-    wav_data += struct.pack('<H', 16)
-    wav_data += b'data'
-    wav_data += struct.pack('<I', data_size)
+    wav_data += b"RIFF"
+    wav_data += struct.pack("<I", 36 + data_size)
+    wav_data += b"WAVE"
+    wav_data += b"fmt "
+    wav_data += struct.pack("<I", 16)
+    wav_data += struct.pack("<H", 1)
+    wav_data += struct.pack("<H", 1)
+    wav_data += struct.pack("<I", sample_rate)
+    wav_data += struct.pack("<I", sample_rate * 2)
+    wav_data += struct.pack("<H", 2)
+    wav_data += struct.pack("<H", 16)
+    wav_data += b"data"
+    wav_data += struct.pack("<I", data_size)
 
     for i in range(num_samples):
         t = i / sample_rate
@@ -76,7 +72,7 @@ def generate_beep_wav():
             fade = (num_samples - i) / fade_samples
 
         sample = int(volume * fade * 32767 * math.sin(2 * math.pi * frequency * t))
-        wav_data += struct.pack('<h', sample)
+        wav_data += struct.pack("<h", sample)
 
     with open("beep.wav", "wb") as f:
         f.write(wav_data)
@@ -116,7 +112,9 @@ class TimerView(discord.ui.View):
 
         button.disabled = True
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send("✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔")
+        await interaction.followup.send(
+            "✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔"
+        )
 
         task = bot.loop.create_task(timer_loop(self.channel, guild_id, self.voice_client))
         active_timers[guild_id]["task"] = task
@@ -226,9 +224,10 @@ async def donate(
     횟수: int,
     스크린샷: discord.Attachment
 ):
-       if 횟수 < 1:
+    if 횟수 < 1:
         await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
         return
+
     if not 스크린샷.content_type or not 스크린샷.content_type.startswith("image/"):
         await interaction.response.send_message("❌ 스크린샷 이미지만 첨부할 수 있어요.", ephemeral=True)
         return
@@ -282,7 +281,7 @@ async def donation_proxy_register(
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
 
-       if 횟수 < 1:
+    if 횟수 < 1:
         await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
         return
 
