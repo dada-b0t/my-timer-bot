@@ -17,49 +17,50 @@ GUILD_ID = discord.Object(id=1506990201204117565)
 active_timers = {}
 
 
-class BeepAudio(discord.AudioSource):
-    def __init__(self, frequency=880, duration=1.5, volume=0.5):
-        self.frequency = frequency
-        self.volume = volume
-        self.sample_rate = 48000
-        self.total_samples = int(self.sample_rate * duration)
-        self.pos = 0
+def generate_beep_wav():
+    sample_rate = 44100
+    duration = 1.5
+    frequency = 880
+    volume = 0.5
+    num_samples = int(sample_rate * duration)
+    wav_data = bytearray()
+    data_size = num_samples * 2
 
-    def read(self):
-        frame_size = 960
-        if self.pos >= self.total_samples:
-            return b''
+    wav_data += b'RIFF'
+    wav_data += struct.pack('<I', 36 + data_size)
+    wav_data += b'WAVE'
+    wav_data += b'fmt '
+    wav_data += struct.pack('<I', 16)
+    wav_data += struct.pack('<H', 1)
+    wav_data += struct.pack('<H', 1)
+    wav_data += struct.pack('<I', sample_rate)
+    wav_data += struct.pack('<I', sample_rate * 2)
+    wav_data += struct.pack('<H', 2)
+    wav_data += struct.pack('<H', 16)
+    wav_data += b'data'
+    wav_data += struct.pack('<I', data_size)
 
-        frames = []
-        fade_samples = int(self.sample_rate * 0.05)
-        for i in range(frame_size):
-            idx = self.pos + i
-            if idx >= self.total_samples:
-                sample = 0
-            else:
-                t = idx / self.sample_rate
-                fade = 1.0
-                if idx < fade_samples:
-                    fade = idx / fade_samples
-                elif idx > self.total_samples - fade_samples:
-                    fade = (self.total_samples - idx) / fade_samples
-                sample = int(self.volume * fade * 32767 * math.sin(2 * math.pi * self.frequency * t))
-                sample = max(-32768, min(32767, sample))
-            frames.append(struct.pack('<hh', sample, sample))
+    for i in range(num_samples):
+        t = i / sample_rate
+        fade = 1.0
+        fade_samples = int(sample_rate * 0.05)
+        if i < fade_samples:
+            fade = i / fade_samples
+        elif i > num_samples - fade_samples:
+            fade = (num_samples - i) / fade_samples
+        sample = int(volume * fade * 32767 * math.sin(2 * math.pi * frequency * t))
+        wav_data += struct.pack('<h', sample)
 
-        self.pos += frame_size
-        return b''.join(frames)
-
-    def is_opus(self):
-        return False
-
-    def cleanup(self):
-        pass
+    with open("beep.wav", "wb") as f:
+        f.write(wav_data)
+    print("✅ beep.wav 생성 완료")
 
 
 @bot.event
 async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
+    if not os.path.exists("beep.wav"):
+        generate_beep_wav()
     bot.tree.copy_global_to(guild=GUILD_ID)
     await bot.tree.sync(guild=GUILD_ID)
     print("✅ 슬래시 커맨드 서버 즉시 등록 완료")
@@ -128,8 +129,9 @@ async def timer_loop(channel, guild_id, voice_client):
 
 def play_beep(voice_client):
     if not voice_client.is_playing():
-        source = BeepAudio(frequency=880, duration=1.5, volume=0.5)
+        source = discord.FFmpegPCMAudio("beep.wav")
         voice_client.play(source)
+        print("🔔 비프음 재생")
 
 
 async def stop_timer(guild_id):
