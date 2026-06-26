@@ -403,8 +403,15 @@ async def donation_check(
 
     desc = f"📊 누적 기부: **{total}회**\n\n최근 인증 기록\n"
 
+    first_valid_image = None
+
     for amount, image_url, created_at in rows:
-        desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
+        if image_url.startswith("http"):
+            desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
+            if first_valid_image is None:
+                first_valid_image = image_url
+        else:
+            desc += f"- {created_at} / {amount:+}회 / 관리자 수동 수정\n"
 
     embed = discord.Embed(
         title=f"💰 {유저.display_name} 기부 조회",
@@ -412,7 +419,8 @@ async def donation_check(
         color=0xF1C40F
     )
 
-    embed.set_image(url=rows[0][1])
+    if first_valid_image:
+        embed.set_image(url=first_valid_image)
 
     await interaction.response.send_message(embed=embed)
 
