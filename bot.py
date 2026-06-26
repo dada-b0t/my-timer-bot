@@ -1,29 +1,11 @@
-import subprocess
-import sys
-import os
-
-# FFmpeg 설치 확인 및 자동 설치
-def install_ffmpeg():
-    try:
-        result = subprocess.run(["ffmpeg", "-version"], capture_output=True)
-        if result.returncode == 0:
-            print("✅ FFmpeg 이미 설치됨")
-            return
-    except FileNotFoundError:
-        pass
-    print("FFmpeg 설치 중...")
-    subprocess.run(["apt-get", "update", "-y"], capture_output=True)
-    subprocess.run(["apt-get", "install", "-y", "ffmpeg"], capture_output=True)
-    print("✅ FFmpeg 설치 완료")
-
-install_ffmpeg()
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 import asyncio
+import os
 import struct
 import math
+import array
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -35,48 +17,54 @@ tree = bot.tree
 active_timers = {}
 
 
-def generate_beep_wav():
-    sample_rate = 44100
-    duration = 1.0
-    frequency = 880
-    volume = 0.5
-    num_samples = int(sample_rate * duration)
-    wav_data = bytearray()
-    data_size = num_samples * 2
+class BeepAudio(discord.AudioSource):
+    """FFmpeg 없이 PCM 비프음을 직접 생성하는 AudioSource"""
+    def __init__(self, frequency=880, duration=1.0, volume=0.5):
+        self.frequency = frequency
+        self.volume = volume
+        self.sample_rate = 48000  # discord 기본 샘플레이트
+        self.channels = 2
+        self.total_samples = int(self.sample_rate * duration)
+        self.pos = 0
 
-    wav_data += b'RIFF'
-    wav_data += struct.pack('<I', 36 + data_size)
-    wav_data += b'WAVE'
-    wav_data += b'fmt '
-    wav_data += struct.pack('<I', 16)
-    wav_data += struct.pack('<H', 1)
-    wav_data += struct.pack('<H', 1)
-    wav_data += struct.pack('<I', sample_rate)
-    wav_data += struct.pack('<I', sample_rate * 2)
-    wav_data += struct.pack('<H', 2)
-    wav_data += struct.pack('<H', 16)
-    wav_data += b'data'
-    wav_data += struct.pack('<I', data_size)
+    def read(self):
+        # 20ms 분량의 프레임 (960 샘플 * 2채널 * 2바이트)
+        frame_size = 960
+        if self.pos >= self.total_samples:
+            return b''
 
-    for i in range(num_samples):
-        t = i / sample_rate
-        fade = 1.0
-        if t < 0.05:
-            fade = t / 0.05
-        elif t > 0.8:
-            fade = (1.0 - t) / 0.2
-        sample = int(volume * fade * 32767 * math.sin(2 * math.pi * frequency * t))
-        wav_data += struct.pack('<h', sample)
+        frames = []
+        for i in range(frame_size):
+            idx = self.pos + i
+            if idx >= self.total_samples:
+                sample = 0
+            else:
+                t = idx / self.sample_rate
+                # 페이드 인/아웃
+                fade = 1.0
+                fade_samples = int(self.sample_rate * 0.05)
+                if idx < fade_samples:
+                    fade = idx / fade_samples
+                elif idx > self.total_samples - fade_samples:
+                    fade = (self.total_samples - idx) / fade_samples
+                sample = int(self.volume * fade * 32767 * math.sin(2 * math.pi * self.frequency * t))
+                sample = max(-32768, min(32767, sample))
+            # stereo (L, R 동일)
+            frames.append(struct.pack('<hh', sample, sample))
 
-    with open("beep.wav", "wb") as f:
-        f.write(wav_data)
+        self.pos += frame_size
+        return b''.join(frames)
+
+    def is_opus(self):
+        return False
+
+    def cleanup(self):
+        pass
 
 
 @bot.event
 async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
-    if not os.path.exists("beep.wav"):
-        generate_beep_wav()
     await tree.sync()
     print("✅ 슬래시 커맨드 등록 완료")
 
@@ -144,7 +132,7 @@ async def timer_loop(channel, guild_id, voice_client):
 
 def play_beep(voice_client):
     if not voice_client.is_playing():
-        source = discord.FFmpegPCMAudio("beep.wav")
+        source = BeepAudio(frequency=880, duration=1.5, volume=0.5)
         voice_client.play(source)
 
 
