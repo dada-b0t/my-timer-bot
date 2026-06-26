@@ -17,8 +17,7 @@ GUILD_ID = discord.Object(id=1506990201204117565)
 
 active_timers = {}
 
-DB_PATH = "donations.db"
-
+DB_PATH = "/app/data/donations.db"
 
 def init_donation_db():
     conn = sqlite3.connect(DB_PATH)
