@@ -106,7 +106,7 @@ class TimerView(discord.ui.View):
 
 async def timer_loop(channel, guild_id, voice_client):
     try:
-        await asyncio.sleep(5)
+        await asyncio.sleep(80)
         if guild_id not in active_timers or not voice_client.is_connected():
             return
         play_beep(voice_client)
@@ -114,7 +114,7 @@ async def timer_loop(channel, guild_id, voice_client):
 
         count = 1
         while guild_id in active_timers and voice_client.is_connected():
-            await asyncio.sleep(5)
+            await asyncio.sleep(90)
             if guild_id not in active_timers or not voice_client.is_connected():
                 break
             count += 1
@@ -168,8 +168,8 @@ async def kakum_timer(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"🔊 **{channel.name}** 에 입장했어요!\n"
         "⏱ 준비됐으면 아래 버튼을 눌러 타이머를 시작하세요!\n"
-        "> 첫 알람: **5초 후** (테스트용)\n"
-        "> 이후: **5초마다**",
+        "> 첫 알람: **80초 후**\n"
+        "> 이후: **90초마다**",
         view=TimerView(guild_id, voice_client, interaction.channel)
     )
 
