@@ -5,51 +5,46 @@ import asyncio
 import os
 import struct
 import math
-import array
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
+
+GUILD_ID = discord.Object(id=1506990201204117565)
 
 active_timers = {}
 
 
 class BeepAudio(discord.AudioSource):
-    """FFmpeg 없이 PCM 비프음을 직접 생성하는 AudioSource"""
-    def __init__(self, frequency=880, duration=1.0, volume=0.5):
+    def __init__(self, frequency=880, duration=1.5, volume=0.5):
         self.frequency = frequency
         self.volume = volume
-        self.sample_rate = 48000  # discord 기본 샘플레이트
-        self.channels = 2
+        self.sample_rate = 48000
         self.total_samples = int(self.sample_rate * duration)
         self.pos = 0
 
     def read(self):
-        # 20ms 분량의 프레임 (960 샘플 * 2채널 * 2바이트)
         frame_size = 960
         if self.pos >= self.total_samples:
             return b''
 
         frames = []
+        fade_samples = int(self.sample_rate * 0.05)
         for i in range(frame_size):
             idx = self.pos + i
             if idx >= self.total_samples:
                 sample = 0
             else:
                 t = idx / self.sample_rate
-                # 페이드 인/아웃
                 fade = 1.0
-                fade_samples = int(self.sample_rate * 0.05)
                 if idx < fade_samples:
                     fade = idx / fade_samples
                 elif idx > self.total_samples - fade_samples:
                     fade = (self.total_samples - idx) / fade_samples
                 sample = int(self.volume * fade * 32767 * math.sin(2 * math.pi * self.frequency * t))
                 sample = max(-32768, min(32767, sample))
-            # stereo (L, R 동일)
             frames.append(struct.pack('<hh', sample, sample))
 
         self.pos += frame_size
@@ -65,8 +60,9 @@ class BeepAudio(discord.AudioSource):
 @bot.event
 async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
-    await tree.sync()
-    print("✅ 슬래시 커맨드 등록 완료")
+    bot.tree.copy_global_to(guild=GUILD_ID)
+    await bot.tree.sync(guild=GUILD_ID)
+    print("✅ 슬래시 커맨드 서버 즉시 등록 완료")
 
 
 class TimerView(discord.ui.View):
@@ -151,7 +147,7 @@ async def stop_timer(guild_id):
             await vc.disconnect()
 
 
-@tree.command(name="카쿰단유타이머", description="음성 채널에 입장하고 타이머를 시작합니다")
+@bot.tree.command(name="카쿰단유타이머", description="음성 채널에 입장하고 타이머를 시작합니다", guild=GUILD_ID)
 async def kakum_timer(interaction: discord.Interaction):
     if not interaction.user.voice:
         await interaction.response.send_message("❌ 먼저 음성 채널에 들어가 주세요!", ephemeral=True)
