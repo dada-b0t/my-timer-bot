@@ -99,7 +99,7 @@ class TimerView(discord.ui.View):
 
 async def timer_loop(ctx, guild_id, voice_client):
     try:
-        await asyncio.sleep(80)
+        await asyncio.sleep(5)
         if guild_id not in active_timers or not voice_client.is_connected():
             return
         play_beep(voice_client)
@@ -107,7 +107,7 @@ async def timer_loop(ctx, guild_id, voice_client):
 
         count = 1
         while guild_id in active_timers and voice_client.is_connected():
-            await asyncio.sleep(90)
+            await asyncio.sleep(5)
             if guild_id not in active_timers or not voice_client.is_connected():
                 break
             count += 1
