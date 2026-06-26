@@ -10,6 +10,7 @@ from datetime import datetime
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -401,6 +402,49 @@ async def donation_delete_by_id(interaction: discord.Interaction, 기록id: int)
     await interaction.response.send_message(
         f"✅ 기록을 삭제했어요.\n> ID: `{record_id}` | {username} | {amount}회 | {created_at}"
     )
+
+
+
+@bot.tree.command(name="기부전체조회", description="전체 길드원의 기부 현황을 확인합니다.", guild=GUILD_ID)
+async def donation_all(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    guild_id = str(interaction.guild.id)
+    guild = interaction.guild
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT user_id, SUM(amount) as total
+        FROM donations WHERE guild_id = ?
+        GROUP BY user_id
+    """, (guild_id,))
+    donation_map = {row[0]: row[1] for row in cur.fetchall()}
+    conn.close()
+
+    members = [m for m in guild.members if not m.bot]
+    members.sort(key=lambda m: donation_map.get(str(m.id), 0), reverse=True)
+
+    done = []
+    not_done = []
+    for m in members:
+        total = donation_map.get(str(m.id), 0)
+        if total > 0:
+            done.append(f"✅ {m.display_name} - {total}회")
+        else:
+            not_done.append(f"❌ {m.display_name} - 0회")
+
+    text = "\n".join(done + not_done)
+    if len(text) > 4000:
+        text = text[:4000] + "\n..."
+
+    embed = discord.Embed(
+        title=f"📋 전체 기부 현황 (총 {len(members)}명)",
+        description=text,
+        color=0xF1C40F
+    )
+    embed.set_footer(text=f"기부자 {len(done)}명 | 미기부 {len(not_done)}명")
+    await interaction.followup.send(embed=embed)
 
 
 # ─────────────────────────────────────────
