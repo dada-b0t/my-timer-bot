@@ -226,7 +226,7 @@ async def donate(
     횟수: int,
     스크린샷: discord.Attachment
 ):
-   if 횟수 < 1:
+    if 횟수 < 1:
     await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
     return
 
