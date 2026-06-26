@@ -1,18 +1,38 @@
+import subprocess
+import sys
+import os
+
+# FFmpeg 설치 확인 및 자동 설치
+def install_ffmpeg():
+    try:
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True)
+        if result.returncode == 0:
+            print("✅ FFmpeg 이미 설치됨")
+            return
+    except FileNotFoundError:
+        pass
+    print("FFmpeg 설치 중...")
+    subprocess.run(["apt-get", "update", "-y"], capture_output=True)
+    subprocess.run(["apt-get", "install", "-y", "ffmpeg"], capture_output=True)
+    print("✅ FFmpeg 설치 완료")
+
+install_ffmpeg()
+
 import discord
+from discord import app_commands
 from discord.ext import commands
 import asyncio
-import os
 import struct
 import math
-
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
 
-active_timers = {}  # guild_id -> {"voice_client": vc, "task": task}
+active_timers = {}
 
 
 def generate_beep_wav():
@@ -57,14 +77,16 @@ async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
     if not os.path.exists("beep.wav"):
         generate_beep_wav()
+    await tree.sync()
+    print("✅ 슬래시 커맨드 등록 완료")
 
 
 class TimerView(discord.ui.View):
-    def __init__(self, guild_id, voice_client, ctx):
+    def __init__(self, guild_id, voice_client, channel):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.voice_client = voice_client
-        self.ctx = ctx
+        self.channel = channel
 
     @discord.ui.button(label="▶ 타이머 시작", style=discord.ButtonStyle.success)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -76,9 +98,9 @@ class TimerView(discord.ui.View):
 
         button.disabled = True
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send("✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔")
+        await interaction.followup.send("✅ 타이머 시작! **5초 후** 첫 알람, 이후 **5초마다** 알람을 울릴게요. 🔔")
 
-        task = bot.loop.create_task(timer_loop(self.ctx, guild_id, self.voice_client))
+        task = bot.loop.create_task(timer_loop(self.channel, guild_id, self.voice_client))
         active_timers[guild_id]["task"] = task
 
     @discord.ui.button(label="⏹ 종료", style=discord.ButtonStyle.danger)
@@ -97,13 +119,13 @@ class TimerView(discord.ui.View):
         await interaction.followup.send("⏹ 타이머를 종료하고 음성 채널에서 나왔어요.")
 
 
-async def timer_loop(ctx, guild_id, voice_client):
+async def timer_loop(channel, guild_id, voice_client):
     try:
         await asyncio.sleep(5)
         if guild_id not in active_timers or not voice_client.is_connected():
             return
         play_beep(voice_client)
-        await ctx.send("🔔 **첫 번째 알람!** (80초 경과)")
+        await channel.send("🔔 **첫 번째 알람!** (5초 경과)")
 
         count = 1
         while guild_id in active_timers and voice_client.is_connected():
@@ -112,7 +134,7 @@ async def timer_loop(ctx, guild_id, voice_client):
                 break
             count += 1
             play_beep(voice_client)
-            await ctx.send(f"🔔 **{count}번째 알람!** (이후 90초 간격)")
+            await channel.send(f"🔔 **{count}번째 알람!**")
 
     except asyncio.CancelledError:
         pass
@@ -141,30 +163,28 @@ async def stop_timer(guild_id):
             await vc.disconnect()
 
 
-@bot.command(name="카쿰단유타이머")
-async def kakum_timer(ctx):
-    if not ctx.author.voice:
-        await ctx.send("❌ 먼저 음성 채널에 들어가 주세요!")
+@tree.command(name="카쿰단유타이머", description="음성 채널에 입장하고 타이머를 시작합니다")
+async def kakum_timer(interaction: discord.Interaction):
+    if not interaction.user.voice:
+        await interaction.response.send_message("❌ 먼저 음성 채널에 들어가 주세요!", ephemeral=True)
         return
 
-    guild_id = ctx.guild.id
+    guild_id = interaction.guild.id
 
     if guild_id in active_timers:
-        await ctx.send("⚠️ 이미 봇이 음성 채널에 있어요. 먼저 종료 버튼을 눌러주세요.")
+        await interaction.response.send_message("⚠️ 이미 봇이 음성 채널에 있어요. 먼저 종료 버튼을 눌러주세요.", ephemeral=True)
         return
 
-    channel = ctx.author.voice.channel
+    channel = interaction.user.voice.channel
     voice_client = await channel.connect()
     active_timers[guild_id] = {"voice_client": voice_client, "task": None}
 
-    await ctx.send(f"🔊 **{channel.name}** 에 입장했어요!")
-
-    view = TimerView(guild_id, voice_client, ctx)
-    await ctx.send(
+    await interaction.response.send_message(
+        f"🔊 **{channel.name}** 에 입장했어요!\n"
         "⏱ 준비됐으면 아래 버튼을 눌러 타이머를 시작하세요!\n"
-        "> 첫 알람: **80초 후**\n"
-        "> 이후: **90초마다**",
-        view=view
+        "> 첫 알람: **5초 후** (테스트용)\n"
+        "> 이후: **5초마다**",
+        view=TimerView(guild_id, voice_client, interaction.channel)
     )
 
 
