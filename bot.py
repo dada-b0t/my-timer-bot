@@ -367,7 +367,7 @@ async def donation_delete(interaction: discord.Interaction, 유저: discord.Memb
     if not rows:
         await interaction.response.send_message(f"❌ {유저.mention}님의 기부 기록이 없어요.", ephemeral=True)
         return
-    desc = f"**{유저.display_name}** 님의 최근 기록이에요.\n삭제할 기록의 ID를 `/기부ID삭제` 로 입력해주세요.\n\n"
+    desc = f"**{유저.display_name}** 님의 최근 기록이에요.\n삭제할 기록의 ID를 `/기부id삭제` 로 입력해주세요.\n\n"
     for record_id, amount, image_url, created_at in rows:
         if image_url.startswith("http"):
             desc += f"`ID: {record_id}` | {created_at} | {amount}회 | [스크린샷]({image_url})\n"
@@ -377,7 +377,7 @@ async def donation_delete(interaction: discord.Interaction, 유저: discord.Memb
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="기부ID삭제", description="관리자가 기부 기록 ID로 특정 기록을 삭제합니다.", guild=GUILD_ID)
+@bot.tree.command(name="기부id삭제", description="관리자가 기부 기록 id로 특정 기록을 삭제합니다.", guild=GUILD_ID)
 async def donation_delete_by_id(interaction: discord.Interaction, 기록id: int):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
