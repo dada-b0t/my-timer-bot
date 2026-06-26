@@ -20,6 +20,7 @@ active_timers = {}
 DB_PATH = "/app/data/donations.db"
 
 def init_donation_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
@@ -45,7 +46,6 @@ def generate_beep_wav():
     num_samples = int(sample_rate * duration)
     wav_data = bytearray()
     data_size = num_samples * 2
-
     wav_data += b"RIFF"
     wav_data += struct.pack("<I", 36 + data_size)
     wav_data += b"WAVE"
@@ -59,7 +59,6 @@ def generate_beep_wav():
     wav_data += struct.pack("<H", 16)
     wav_data += b"data"
     wav_data += struct.pack("<I", data_size)
-
     for i in range(num_samples):
         t = i / sample_rate
         fade = 1.0
@@ -70,7 +69,6 @@ def generate_beep_wav():
             fade = (num_samples - i) / fade_samples
         sample = int(volume * fade * 32767 * math.sin(2 * math.pi * frequency * t))
         wav_data += struct.pack("<h", sample)
-
     with open("beep.wav", "wb") as f:
         f.write(wav_data)
     print("✅ beep.wav 생성 완료")
@@ -188,111 +186,74 @@ async def kakum_timer(interaction: discord.Interaction):
 # ─────────────────────────────────────────
 
 @bot.tree.command(name="기부인증", description="길드 기부를 스크린샷과 함께 인증합니다.", guild=GUILD_ID)
-async def donate(
-    interaction: discord.Interaction,
-    횟수: int,
-    스크린샷: discord.Attachment
-):
+async def donate(interaction: discord.Interaction, 횟수: int, 스크린샷: discord.Attachment):
     if 횟수 < 1:
         await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
         return
-
     if not 스크린샷.content_type or not 스크린샷.content_type.startswith("image/"):
         await interaction.response.send_message("❌ 스크린샷 이미지만 첨부할 수 있어요.", ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
     user_id = str(interaction.user.id)
     username = interaction.user.display_name
     image_url = 스크린샷.url
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     today = datetime.now().strftime("%Y-%m-%d")
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
-    # 오늘 이미 기부 등록했는지 확인
     cur.execute("""
         SELECT COUNT(*) FROM donations
         WHERE guild_id = ? AND user_id = ? AND created_at LIKE ?
         AND image_url != '관리자 수동 수정'
     """, (guild_id, user_id, f"{today}%"))
-
     already = cur.fetchone()[0]
-
     if already > 0:
         conn.close()
         await interaction.response.send_message("❌ 오늘은 이미 기부를 등록했어요.", ephemeral=True)
         return
-
     cur.execute("""
         INSERT INTO donations (guild_id, user_id, username, amount, image_url, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (guild_id, user_id, username, 횟수, image_url, now))
-
-    cur.execute("""
-        SELECT SUM(amount) FROM donations
-        WHERE guild_id = ? AND user_id = ?
-    """, (guild_id, user_id))
-
+    cur.execute("SELECT SUM(amount) FROM donations WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
     total = cur.fetchone()[0] or 0
-
     conn.commit()
     conn.close()
-
     embed = discord.Embed(title="💰 길드 기부 인증", color=0xF1C40F)
     embed.add_field(name="👤 길드원", value=interaction.user.mention, inline=True)
     embed.add_field(name="🎁 이번 기부", value=f"{횟수}회", inline=True)
     embed.add_field(name="📊 누적 기부", value=f"{total}회", inline=True)
     embed.add_field(name="🕒 인증 시간", value=now, inline=False)
     embed.set_image(url=image_url)
-
     await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="기부대리등록", description="관리자가 다른 길드원의 기부 인증을 대신 등록합니다.", guild=GUILD_ID)
-async def donation_proxy_register(
-    interaction: discord.Interaction,
-    유저: discord.Member,
-    횟수: int,
-    스크린샷: discord.Attachment
-):
+async def donation_proxy_register(interaction: discord.Interaction, 유저: discord.Member, 횟수: int, 스크린샷: discord.Attachment):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
-
     if 횟수 < 1:
         await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
         return
-
     if not 스크린샷.content_type or not 스크린샷.content_type.startswith("image/"):
         await interaction.response.send_message("❌ 스크린샷 이미지만 첨부할 수 있어요.", ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
     user_id = str(유저.id)
     username = 유저.display_name
     image_url = 스크린샷.url
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
     cur.execute("""
         INSERT INTO donations (guild_id, user_id, username, amount, image_url, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (guild_id, user_id, username, 횟수, image_url, now))
-
-    cur.execute("""
-        SELECT SUM(amount) FROM donations
-        WHERE guild_id = ? AND user_id = ?
-    """, (guild_id, user_id))
-
+    cur.execute("SELECT SUM(amount) FROM donations WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
     total = cur.fetchone()[0] or 0
-
     conn.commit()
     conn.close()
-
     embed = discord.Embed(title="💰 길드 기부 대리 등록", color=0xF1C40F)
     embed.add_field(name="👤 길드원", value=유저.mention, inline=True)
     embed.add_field(name="📝 등록자", value=interaction.user.mention, inline=True)
@@ -300,79 +261,53 @@ async def donation_proxy_register(
     embed.add_field(name="📊 누적 기부", value=f"{total}회", inline=True)
     embed.add_field(name="🕒 등록 시간", value=now, inline=False)
     embed.set_image(url=image_url)
-
     await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="기부랭킹", description="길드 기부 랭킹을 확인합니다.", guild=GUILD_ID)
 async def donation_ranking(interaction: discord.Interaction):
     guild_id = str(interaction.guild.id)
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
     cur.execute("""
         SELECT username, SUM(amount) as total
-        FROM donations
-        WHERE guild_id = ?
-        GROUP BY user_id
-        ORDER BY total DESC
-        LIMIT 10
+        FROM donations WHERE guild_id = ?
+        GROUP BY user_id ORDER BY total DESC LIMIT 10
     """, (guild_id,))
-
     rows = cur.fetchall()
     conn.close()
-
     if not rows:
         await interaction.response.send_message("아직 기부 인증 기록이 없어요.")
         return
-
     medals = ["🥇", "🥈", "🥉"]
     text = ""
     for i, (username, total) in enumerate(rows, start=1):
         medal = medals[i - 1] if i <= 3 else f"{i}."
         text += f"{medal} **{username}** - {total}회\n"
-
     embed = discord.Embed(title="🏆 길드 기부 랭킹", description=text, color=0xF1C40F)
     await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="기부조회", description="특정 유저의 기부 기록을 조회합니다.", guild=GUILD_ID)
-async def donation_check(
-    interaction: discord.Interaction,
-    유저: discord.Member
-):
+async def donation_check(interaction: discord.Interaction, 유저: discord.Member):
     guild_id = str(interaction.guild.id)
     user_id = str(유저.id)
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
-    cur.execute("""
-        SELECT SUM(amount) FROM donations
-        WHERE guild_id = ? AND user_id = ?
-    """, (guild_id, user_id))
-
+    cur.execute("SELECT SUM(amount) FROM donations WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
     total = cur.fetchone()[0] or 0
-
     cur.execute("""
-        SELECT amount, image_url, created_at
-        FROM donations
+        SELECT amount, image_url, created_at FROM donations
         WHERE guild_id = ? AND user_id = ?
-        ORDER BY id DESC
-        LIMIT 5
+        ORDER BY id DESC LIMIT 5
     """, (guild_id, user_id))
-
     rows = cur.fetchall()
     conn.close()
-
     if not rows:
         await interaction.response.send_message(f"❌ {유저.mention}님의 기부 기록이 없어요.")
         return
-
     desc = f"📊 누적 기부: **{total}회**\n\n최근 인증 기록\n"
     first_valid_image = None
-
     for amount, image_url, created_at in rows:
         if image_url and isinstance(image_url, str) and image_url.startswith("http"):
             desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
@@ -380,146 +315,94 @@ async def donation_check(
                 first_valid_image = image_url
         else:
             desc += f"- {created_at} / {amount:+}회 / 🛠 관리자 수동 수정\n"
-
-    embed = discord.Embed(
-        title=f"💰 {유저.display_name} 기부 조회",
-        description=desc,
-        color=0xF1C40F
-    )
+    embed = discord.Embed(title=f"💰 {유저.display_name} 기부 조회", description=desc, color=0xF1C40F)
     if first_valid_image:
         embed.set_image(url=first_valid_image)
-
     await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="기부수정", description="관리자가 유저의 기부 횟수를 수동으로 추가/차감합니다.", guild=GUILD_ID)
-async def donation_edit(
-    interaction: discord.Interaction,
-    유저: discord.Member,
-    횟수: int
-):
+async def donation_edit(interaction: discord.Interaction, 유저: discord.Member, 횟수: int):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
-
     if 횟수 == 0:
         await interaction.response.send_message("❌ 0회는 입력할 수 없어요.", ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
     user_id = str(유저.id)
     username = 유저.display_name
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
     cur.execute("""
         INSERT INTO donations (guild_id, user_id, username, amount, image_url, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (guild_id, user_id, username, 횟수, "관리자 수동 수정", now))
-
-    cur.execute("""
-        SELECT SUM(amount) FROM donations
-        WHERE guild_id = ? AND user_id = ?
-    """, (guild_id, user_id))
-
+    cur.execute("SELECT SUM(amount) FROM donations WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
     total = cur.fetchone()[0] or 0
-
     conn.commit()
     conn.close()
-
     await interaction.response.send_message(
-        f"✅ {유저.mention}님의 기부 기록을 `{횟수:+}회` 수정했어요.\n"
-        f"현재 누적: **{total}회**"
+        f"✅ {유저.mention}님의 기부 기록을 `{횟수:+}회` 수정했어요.\n현재 누적: **{total}회**"
     )
 
 
-TOKEN = os.getenv("DISCORD_TOKEN", "여기에_봇_토큰_입력")
-bot.run(TOKEN)
-
-
 @bot.tree.command(name="기부삭제", description="관리자가 잘못된 기부 기록을 삭제합니다.", guild=GUILD_ID)
-async def donation_delete(
-    interaction: discord.Interaction,
-    유저: discord.Member
-):
+async def donation_delete(interaction: discord.Interaction, 유저: discord.Member):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
     user_id = str(유저.id)
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
     cur.execute("""
-        SELECT id, amount, image_url, created_at
-        FROM donations
+        SELECT id, amount, image_url, created_at FROM donations
         WHERE guild_id = ? AND user_id = ?
-        ORDER BY id DESC
-        LIMIT 10
+        ORDER BY id DESC LIMIT 10
     """, (guild_id, user_id))
-
     rows = cur.fetchall()
     conn.close()
-
     if not rows:
         await interaction.response.send_message(f"❌ {유저.mention}님의 기부 기록이 없어요.", ephemeral=True)
         return
-
     desc = f"**{유저.display_name}** 님의 최근 기록이에요.\n삭제할 기록의 ID를 `/기부ID삭제` 로 입력해주세요.\n\n"
     for record_id, amount, image_url, created_at in rows:
         if image_url.startswith("http"):
             desc += f"`ID: {record_id}` | {created_at} | {amount}회 | [스크린샷]({image_url})\n"
         else:
             desc += f"`ID: {record_id}` | {created_at} | {amount:+}회 | 🛠 관리자 수동 수정\n"
-
-    embed = discord.Embed(
-        title=f"🗑 기부 기록 삭제 - {유저.display_name}",
-        description=desc,
-        color=0xE74C3C
-    )
-
+    embed = discord.Embed(title=f"🗑 기부 기록 삭제 - {유저.display_name}", description=desc, color=0xE74C3C)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(name="기부ID삭제", description="관리자가 기부 기록 ID로 특정 기록을 삭제합니다.", guild=GUILD_ID)
-async def donation_delete_by_id(
-    interaction: discord.Interaction,
-    기록id: int
-):
+async def donation_delete_by_id(interaction: discord.Interaction, 기록id: int):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
-
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-
-    # 해당 기록이 이 서버 것인지 확인
     cur.execute("""
-        SELECT id, username, amount, created_at
-        FROM donations
+        SELECT id, username, amount, created_at FROM donations
         WHERE id = ? AND guild_id = ?
     """, (기록id, guild_id))
-
     row = cur.fetchone()
-
     if not row:
         conn.close()
         await interaction.response.send_message(f"❌ ID `{기록id}` 기록을 찾을 수 없어요.", ephemeral=True)
         return
-
     record_id, username, amount, created_at = row
-
     cur.execute("DELETE FROM donations WHERE id = ?", (기록id,))
     conn.commit()
     conn.close()
-
     await interaction.response.send_message(
-        f"✅ 기록을 삭제했어요.\n"
-        f"> ID: `{record_id}` | {username} | {amount}회 | {created_at}"
+        f"✅ 기록을 삭제했어요.\n> ID: `{record_id}` | {username} | {amount}회 | {created_at}"
     )
+
+
+# ─────────────────────────────────────────
+TOKEN = os.getenv("DISCORD_TOKEN", "여기에_봇_토큰_입력")
+bot.run(TOKEN)
