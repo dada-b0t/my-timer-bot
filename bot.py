@@ -65,33 +65,26 @@ def generate_beep_wav():
         t = i / sample_rate
         fade = 1.0
         fade_samples = int(sample_rate * 0.05)
-
         if i < fade_samples:
             fade = i / fade_samples
         elif i > num_samples - fade_samples:
             fade = (num_samples - i) / fade_samples
-
         sample = int(volume * fade * 32767 * math.sin(2 * math.pi * frequency * t))
         wav_data += struct.pack("<h", sample)
 
     with open("beep.wav", "wb") as f:
         f.write(wav_data)
-
     print("✅ beep.wav 생성 완료")
 
 
 @bot.event
 async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
-
     if not os.path.exists("beep.wav"):
         generate_beep_wav()
-
     init_donation_db()
-
     bot.tree.copy_global_to(guild=GUILD_ID)
     await bot.tree.sync(guild=GUILD_ID)
-
     print("✅ 슬래시 커맨드 서버 즉시 등록 완료")
 
 
@@ -105,33 +98,24 @@ class TimerView(discord.ui.View):
     @discord.ui.button(label="▶ 타이머 시작", style=discord.ButtonStyle.success)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = self.guild_id
-
         if guild_id in active_timers and active_timers[guild_id].get("task"):
             await interaction.response.send_message("⚠️ 이미 타이머가 실행 중이에요!", ephemeral=True)
             return
-
         button.disabled = True
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send(
-            "✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔"
-        )
-
+        await interaction.followup.send("✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔")
         task = bot.loop.create_task(timer_loop(self.channel, guild_id, self.voice_client))
         active_timers[guild_id]["task"] = task
 
     @discord.ui.button(label="⏹ 종료", style=discord.ButtonStyle.danger)
     async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = self.guild_id
-
         if guild_id not in active_timers:
             await interaction.response.send_message("❌ 실행 중인 타이머가 없어요.", ephemeral=True)
             return
-
         await stop_timer(guild_id)
-
         for child in self.children:
             child.disabled = True
-
         await interaction.response.edit_message(view=self)
         await interaction.followup.send("⏹ 타이머를 종료하고 음성 채널에서 나왔어요.")
 
@@ -139,25 +123,18 @@ class TimerView(discord.ui.View):
 async def timer_loop(channel, guild_id, voice_client):
     try:
         await asyncio.sleep(80)
-
         if guild_id not in active_timers or not voice_client.is_connected():
             return
-
         play_beep(voice_client)
         await channel.send("🔔 **첫 번째 알람!** (80초 경과)")
-
         count = 1
-
         while guild_id in active_timers and voice_client.is_connected():
             await asyncio.sleep(90)
-
             if guild_id not in active_timers or not voice_client.is_connected():
                 break
-
             count += 1
             play_beep(voice_client)
             await channel.send(f"🔔 **{count}번째 알람!**")
-
     except asyncio.CancelledError:
         pass
     except Exception as e:
@@ -174,13 +151,10 @@ def play_beep(voice_client):
 async def stop_timer(guild_id):
     if guild_id not in active_timers:
         return
-
     data = active_timers.pop(guild_id)
-
     task = data.get("task")
     if task:
         task.cancel()
-
     vc = data.get("voice_client")
     if vc:
         if vc.is_playing():
@@ -194,21 +168,13 @@ async def kakum_timer(interaction: discord.Interaction):
     if not interaction.user.voice:
         await interaction.response.send_message("❌ 먼저 음성 채널에 들어가 주세요!", ephemeral=True)
         return
-
     guild_id = interaction.guild.id
-
     if guild_id in active_timers:
         await interaction.response.send_message("⚠️ 이미 봇이 음성 채널에 있어요. 먼저 종료 버튼을 눌러주세요.", ephemeral=True)
         return
-
     channel = interaction.user.voice.channel
     voice_client = await channel.connect()
-
-    active_timers[guild_id] = {
-        "voice_client": voice_client,
-        "task": None
-    }
-
+    active_timers[guild_id] = {"voice_client": voice_client, "task": None}
     await interaction.response.send_message(
         f"🔊 **{channel.name}** 에 입장했어요!\n"
         "⏱ 준비됐으면 아래 버튼을 눌러 타이머를 시작하세요!\n"
@@ -217,6 +183,10 @@ async def kakum_timer(interaction: discord.Interaction):
         view=TimerView(guild_id, voice_client, interaction.channel)
     )
 
+
+# ─────────────────────────────────────────
+# 기부 시스템
+# ─────────────────────────────────────────
 
 @bot.tree.command(name="기부인증", description="길드 기부를 스크린샷과 함께 인증합니다.", guild=GUILD_ID)
 async def donate(
@@ -233,33 +203,28 @@ async def donate(
         return
 
     guild_id = str(interaction.guild.id)
-    today = datetime.now().strftime("%Y-%m-%d")
-
-cur.execute("""
-SELECT COUNT(*)
-FROM donations
-WHERE guild_id = ?
-AND user_id = ?
-AND created_at LIKE ?
-AND image_url != '관리자 수동 수정'
-""", (guild_id, user_id, f"{today}%"))
-
-already = cur.fetchone()[0]
-
-if already > 0:
-    conn.close()
-    await interaction.response.send_message(
-        "❌ 오늘은 이미 기부를 등록했어요.",
-        ephemeral=True
-    )
-    return
     user_id = str(interaction.user.id)
     username = interaction.user.display_name
     image_url = 스크린샷.url
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    today = datetime.now().strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+
+    # 오늘 이미 기부 등록했는지 확인
+    cur.execute("""
+        SELECT COUNT(*) FROM donations
+        WHERE guild_id = ? AND user_id = ? AND created_at LIKE ?
+        AND image_url != '관리자 수동 수정'
+    """, (guild_id, user_id, f"{today}%"))
+
+    already = cur.fetchone()[0]
+
+    if already > 0:
+        conn.close()
+        await interaction.response.send_message("❌ 오늘은 이미 기부를 등록했어요.", ephemeral=True)
+        return
 
     cur.execute("""
         INSERT INTO donations (guild_id, user_id, username, amount, image_url, created_at)
@@ -267,8 +232,7 @@ if already > 0:
     """, (guild_id, user_id, username, 횟수, image_url, now))
 
     cur.execute("""
-        SELECT SUM(amount)
-        FROM donations
+        SELECT SUM(amount) FROM donations
         WHERE guild_id = ? AND user_id = ?
     """, (guild_id, user_id))
 
@@ -277,10 +241,7 @@ if already > 0:
     conn.commit()
     conn.close()
 
-    embed = discord.Embed(
-        title="💰 길드 기부 인증",
-        color=0xF1C40F
-    )
+    embed = discord.Embed(title="💰 길드 기부 인증", color=0xF1C40F)
     embed.add_field(name="👤 길드원", value=interaction.user.mention, inline=True)
     embed.add_field(name="🎁 이번 기부", value=f"{횟수}회", inline=True)
     embed.add_field(name="📊 누적 기부", value=f"{total}회", inline=True)
@@ -324,8 +285,7 @@ async def donation_proxy_register(
     """, (guild_id, user_id, username, 횟수, image_url, now))
 
     cur.execute("""
-        SELECT SUM(amount)
-        FROM donations
+        SELECT SUM(amount) FROM donations
         WHERE guild_id = ? AND user_id = ?
     """, (guild_id, user_id))
 
@@ -334,10 +294,7 @@ async def donation_proxy_register(
     conn.commit()
     conn.close()
 
-    embed = discord.Embed(
-        title="💰 길드 기부 대리 등록",
-        color=0xF1C40F
-    )
+    embed = discord.Embed(title="💰 길드 기부 대리 등록", color=0xF1C40F)
     embed.add_field(name="👤 길드원", value=유저.mention, inline=True)
     embed.add_field(name="📝 등록자", value=interaction.user.mention, inline=True)
     embed.add_field(name="🎁 이번 기부", value=f"{횟수}회", inline=True)
@@ -373,17 +330,11 @@ async def donation_ranking(interaction: discord.Interaction):
 
     medals = ["🥇", "🥈", "🥉"]
     text = ""
-
     for i, (username, total) in enumerate(rows, start=1):
         medal = medals[i - 1] if i <= 3 else f"{i}."
         text += f"{medal} **{username}** - {total}회\n"
 
-    embed = discord.Embed(
-        title="🏆 길드 기부 랭킹",
-        description=text,
-        color=0xF1C40F
-    )
-
+    embed = discord.Embed(title="🏆 길드 기부 랭킹", description=text, color=0xF1C40F)
     await interaction.response.send_message(embed=embed)
 
 
@@ -399,8 +350,7 @@ async def donation_check(
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT SUM(amount)
-        FROM donations
+        SELECT SUM(amount) FROM donations
         WHERE guild_id = ? AND user_id = ?
     """, (guild_id, user_id))
 
@@ -422,23 +372,21 @@ async def donation_check(
         return
 
     desc = f"📊 누적 기부: **{total}회**\n\n최근 인증 기록\n"
-
     first_valid_image = None
 
-   for amount, image_url, created_at in rows:
-    if image_url and isinstance(image_url, str) and image_url.startswith("http"):
-        desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
+    for amount, image_url, created_at in rows:
+        if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+            desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
+            if first_valid_image is None:
+                first_valid_image = image_url
+        else:
+            desc += f"- {created_at} / {amount:+}회 / 🛠 관리자 수동 수정\n"
 
-        if first_valid_image is None:
-            first_valid_image = image_url
-    else:
-        desc += f"- {created_at} / {amount:+}회 / 🛠 관리자 수동 수정\n"
     embed = discord.Embed(
         title=f"💰 {유저.display_name} 기부 조회",
         description=desc,
         color=0xF1C40F
     )
-
     if first_valid_image:
         embed.set_image(url=first_valid_image)
 
@@ -473,8 +421,7 @@ async def donation_edit(
     """, (guild_id, user_id, username, 횟수, "관리자 수동 수정", now))
 
     cur.execute("""
-        SELECT SUM(amount)
-        FROM donations
+        SELECT SUM(amount) FROM donations
         WHERE guild_id = ? AND user_id = ?
     """, (guild_id, user_id))
 
