@@ -283,9 +283,9 @@ async def donation_proxy_register(
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
         return
 
-    if 횟수 < 1 or 횟수 > 10:
-        await interaction.response.send_message("❌ 기부 횟수는 1~10회까지만 입력할 수 있어요.", ephemeral=True)
-        return
+   if 횟수 < 1:
+    await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
+    return
 
     if not 스크린샷.content_type or not 스크린샷.content_type.startswith("image/"):
         await interaction.response.send_message("❌ 스크린샷 이미지만 첨부할 수 있어요.", ephemeral=True)
