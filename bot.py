@@ -405,14 +405,14 @@ async def donation_check(
 
     first_valid_image = None
 
-    for amount, image_url, created_at in rows:
-        if image_url.startswith("http"):
-            desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
-            if first_valid_image is None:
-                first_valid_image = image_url
-        else:
-            desc += f"- {created_at} / {amount:+}회 / 관리자 수동 수정\n"
+   for amount, image_url, created_at in rows:
+    if image_url and isinstance(image_url, str) and image_url.startswith("http"):
+        desc += f"- {created_at} / {amount}회 / [스크린샷]({image_url})\n"
 
+        if first_valid_image is None:
+            first_valid_image = image_url
+    else:
+        desc += f"- {created_at} / {amount:+}회 / 🛠 관리자 수동 수정\n"
     embed = discord.Embed(
         title=f"💰 {유저.display_name} 기부 조회",
         description=desc,
