@@ -233,6 +233,26 @@ async def donate(
         return
 
     guild_id = str(interaction.guild.id)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+cur.execute("""
+SELECT COUNT(*)
+FROM donations
+WHERE guild_id = ?
+AND user_id = ?
+AND created_at LIKE ?
+AND image_url != '관리자 수동 수정'
+""", (guild_id, user_id, f"{today}%"))
+
+already = cur.fetchone()[0]
+
+if already > 0:
+    conn.close()
+    await interaction.response.send_message(
+        "❌ 오늘은 이미 기부를 등록했어요.",
+        ephemeral=True
+    )
+    return
     user_id = str(interaction.user.id)
     username = interaction.user.display_name
     image_url = 스크린샷.url
