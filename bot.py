@@ -83,7 +83,7 @@ class TimerView(discord.ui.View):
 
         button.disabled = True
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send("✅ 타이머 시작! **5초 후** 첫 알람, 이후 **5초마다** 알람을 울릴게요. 🔔")
+        await interaction.followup.send("✅ 타이머 시작! **80초 후** 첫 알람, 이후 **90초마다** 알람을 울릴게요. 🔔")
 
         task = bot.loop.create_task(timer_loop(self.channel, guild_id, self.voice_client))
         active_timers[guild_id]["task"] = task
@@ -110,7 +110,7 @@ async def timer_loop(channel, guild_id, voice_client):
         if guild_id not in active_timers or not voice_client.is_connected():
             return
         play_beep(voice_client)
-        await channel.send("🔔 **첫 번째 알람!** (5초 경과)")
+        await channel.send("🔔 **첫 번째 알람!** (80초 경과)")
 
         count = 1
         while guild_id in active_timers and voice_client.is_connected():
