@@ -438,3 +438,89 @@ async def donation_edit(
 
 TOKEN = os.getenv("DISCORD_TOKEN", "여기에_봇_토큰_입력")
 bot.run(TOKEN)
+
+
+@bot.tree.command(name="기부삭제", description="관리자가 잘못된 기부 기록을 삭제합니다.", guild=GUILD_ID)
+async def donation_delete(
+    interaction: discord.Interaction,
+    유저: discord.Member
+):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    user_id = str(유저.id)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, amount, image_url, created_at
+        FROM donations
+        WHERE guild_id = ? AND user_id = ?
+        ORDER BY id DESC
+        LIMIT 10
+    """, (guild_id, user_id))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        await interaction.response.send_message(f"❌ {유저.mention}님의 기부 기록이 없어요.", ephemeral=True)
+        return
+
+    desc = f"**{유저.display_name}** 님의 최근 기록이에요.\n삭제할 기록의 ID를 `/기부ID삭제` 로 입력해주세요.\n\n"
+    for record_id, amount, image_url, created_at in rows:
+        if image_url.startswith("http"):
+            desc += f"`ID: {record_id}` | {created_at} | {amount}회 | [스크린샷]({image_url})\n"
+        else:
+            desc += f"`ID: {record_id}` | {created_at} | {amount:+}회 | 🛠 관리자 수동 수정\n"
+
+    embed = discord.Embed(
+        title=f"🗑 기부 기록 삭제 - {유저.display_name}",
+        description=desc,
+        color=0xE74C3C
+    )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="기부ID삭제", description="관리자가 기부 기록 ID로 특정 기록을 삭제합니다.", guild=GUILD_ID)
+async def donation_delete_by_id(
+    interaction: discord.Interaction,
+    기록id: int
+):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # 해당 기록이 이 서버 것인지 확인
+    cur.execute("""
+        SELECT id, username, amount, created_at
+        FROM donations
+        WHERE id = ? AND guild_id = ?
+    """, (기록id, guild_id))
+
+    row = cur.fetchone()
+
+    if not row:
+        conn.close()
+        await interaction.response.send_message(f"❌ ID `{기록id}` 기록을 찾을 수 없어요.", ephemeral=True)
+        return
+
+    record_id, username, amount, created_at = row
+
+    cur.execute("DELETE FROM donations WHERE id = ?", (기록id,))
+    conn.commit()
+    conn.close()
+
+    await interaction.response.send_message(
+        f"✅ 기록을 삭제했어요.\n"
+        f"> ID: `{record_id}` | {username} | {amount}회 | {created_at}"
+    )
