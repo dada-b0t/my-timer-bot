@@ -17,7 +17,7 @@ GUILD_ID = discord.Object(id=1506990201204117565)
 
 active_timers = {}
 
-DB_PATH = "/data/donations.db"
+DB_PATH = "donations.db"
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 
