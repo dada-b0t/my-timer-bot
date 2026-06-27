@@ -41,6 +41,11 @@ def init_donation_db():
 async def on_ready():
     print(f"✅ 봇 로그인 완료: {bot.user}")
     init_donation_db()
+    # 글로벌 + 서버 커맨드 전체 초기화 후 재등록
+    bot.tree.clear_commands(guild=None)
+    await bot.tree.sync()
+    bot.tree.clear_commands(guild=GUILD_ID)
+    await bot.tree.sync(guild=GUILD_ID)
     bot.tree.copy_global_to(guild=GUILD_ID)
     await bot.tree.sync(guild=GUILD_ID)
     print("✅ 슬래시 커맨드 서버 즉시 등록 완료")
