@@ -453,7 +453,7 @@ async def donation_all(interaction: discord.Interaction):
 # 공대 신청 시스템
 # ─────────────────────────────────────────
 
-RAID_JOBS = ["비숍", "달나", "궁수", "근격", "원격"]
+RAID_JOBS = ["비숍", "닼나", "궁수", "근격", "원격"]
 
 def init_raid_db():
     conn = sqlite3.connect(DB_PATH)
@@ -656,7 +656,7 @@ async def raid_create(
     공대이름: str,
     시간: str,
     비숍: int = 0,
-    달나: int = 0,
+    닼나: int = 0,
     궁수: int = 0,
     근격: int = 0,
     원격: int = 0
@@ -667,7 +667,7 @@ async def raid_create(
 
     import json
     guild_id = str(interaction.guild.id)
-    slots = {"비숍": 비숍, "달나": 달나, "궁수": 궁수, "근격": 근격, "원격": 원격}
+    slots = {"비숍": 비숍, "닼나": 닼나, "궁수": 궁수, "근격": 근격, "원격": 원격}
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     conn = sqlite3.connect(DB_PATH)
@@ -675,7 +675,7 @@ async def raid_create(
     cur.execute("""
         INSERT INTO raids (guild_id, name, raid_time, slots, created_at)
         VALUES (?, ?, ?, ?, ?)
-    """, (guild_id, 공대이름, 시간, json.dumps(slots, ensure_ascii=False), now))
+    """, (guild_id, 공대이름, 시간, ,인원 json.dumps(slots, ensure_ascii=False), now))
     raid_id = cur.lastrowid
     conn.commit()
     conn.close()
