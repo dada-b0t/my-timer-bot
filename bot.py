@@ -81,6 +81,7 @@ async def on_ready():
     if not os.path.exists("beep.wav"):
         generate_beep_wav()
     init_donation_db()
+    init_raid_db()
     bot.tree.copy_global_to(guild=GUILD_ID)
     await bot.tree.sync(guild=GUILD_ID)
     print("✅ 슬래시 커맨드 서버 즉시 등록 완료")
@@ -445,6 +446,323 @@ async def donation_all(interaction: discord.Interaction):
     )
     embed.set_footer(text=f"기부자 {len(done)}명 | 미기부 {len(not_done)}명")
     await interaction.followup.send(embed=embed)
+
+
+
+# ─────────────────────────────────────────
+# 공대 신청 시스템
+# ─────────────────────────────────────────
+
+RAID_JOBS = ["비숍", "달나", "궁수", "근격", "원격"]
+
+def init_raid_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS raids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            raid_time TEXT NOT NULL,
+            slots TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS raid_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            raid_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            job TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_raid_embed(raid_id):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT name, raid_time, slots FROM raids WHERE id = ?", (raid_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return None
+    name, raid_time, slots_json = row
+    import json
+    slots = json.loads(slots_json)
+
+    cur.execute("SELECT username, job FROM raid_members WHERE raid_id = ?", (raid_id,))
+    members = cur.fetchall()
+    conn.close()
+
+    # 직업별 멤버 정리
+    job_members = {job: [] for job in RAID_JOBS}
+    for username, job in members:
+        if job in job_members:
+            job_members[job].append(username)
+
+    embed = discord.Embed(
+        title=f"⚔️ {name}",
+        description=f"🕒 시간: **{raid_time}**",
+        color=0x9B59B6
+    )
+
+    for job in RAID_JOBS:
+        limit = slots.get(job, 0)
+        if limit == 0:
+            continue
+        current = job_members[job]
+        filled = len(current)
+        member_text = "\n".join(current) if current else "없음"
+        embed.add_field(
+            name=f"{job} ({filled}/{limit})",
+            value=member_text,
+            inline=True
+        )
+
+    total = len(members)
+    embed.set_footer(text=f"총 {total}명 신청 중")
+    return embed
+
+
+def make_raid_view(raid_id):
+    import json
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT slots FROM raids WHERE id = ?", (raid_id,))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        return None
+    slots = json.loads(row[0])
+
+    view = discord.ui.View(timeout=None)
+
+    for job in RAID_JOBS:
+        if slots.get(job, 0) == 0:
+            continue
+
+        async def make_callback(j=job, rid=raid_id):
+            async def callback(interaction: discord.Interaction):
+                await handle_raid_join(interaction, rid, j)
+            return callback
+
+        btn = discord.ui.Button(
+            label=f"{job} 신청",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"raid_{raid_id}_{job}"
+        )
+        import asyncio
+        btn.callback = asyncio.get_event_loop().run_until_complete(make_callback(job, raid_id)) if False else None
+
+        view.add_item(btn)
+
+    cancel_btn = discord.ui.Button(
+        label="❌ 신청 취소",
+        style=discord.ButtonStyle.danger,
+        custom_id=f"raid_{raid_id}_cancel"
+    )
+    view.add_item(cancel_btn)
+    return view
+
+
+async def handle_raid_join(interaction: discord.Interaction, raid_id: int, job: str):
+    import json
+    guild_id = str(interaction.guild.id)
+    user_id = str(interaction.user.id)
+    username = interaction.user.display_name
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT slots FROM raids WHERE id = ? AND guild_id = ?", (raid_id, guild_id))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        await interaction.response.send_message("❌ 공대를 찾을 수 없어요.", ephemeral=True)
+        return
+
+    slots = json.loads(row[0])
+    limit = slots.get(job, 0)
+
+    # 이미 신청했는지 확인
+    cur.execute("SELECT job FROM raid_members WHERE raid_id = ? AND user_id = ?", (raid_id, user_id))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        await interaction.response.send_message(f"⚠️ 이미 **{existing[0]}**으로 신청했어요. 취소 후 다시 신청해주세요.", ephemeral=True)
+        return
+
+    # 슬롯 확인
+    cur.execute("SELECT COUNT(*) FROM raid_members WHERE raid_id = ? AND job = ?", (raid_id, job))
+    current = cur.fetchone()[0]
+    if current >= limit:
+        conn.close()
+        await interaction.response.send_message(f"❌ **{job}** 슬롯이 꽉 찼어요. ({current}/{limit})", ephemeral=True)
+        return
+
+    cur.execute("INSERT INTO raid_members (raid_id, user_id, username, job) VALUES (?, ?, ?, ?)",
+                (raid_id, user_id, username, job))
+    conn.commit()
+    conn.close()
+
+    embed = get_raid_embed(raid_id)
+    await interaction.response.edit_message(embed=embed)
+    await interaction.followup.send(f"✅ **{job}**으로 신청했어요!", ephemeral=True)
+
+
+async def handle_raid_cancel(interaction: discord.Interaction, raid_id: int):
+    user_id = str(interaction.user.id)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT job FROM raid_members WHERE raid_id = ? AND user_id = ?", (raid_id, user_id))
+    existing = cur.fetchone()
+    if not existing:
+        conn.close()
+        await interaction.response.send_message("❌ 신청 내역이 없어요.", ephemeral=True)
+        return
+
+    cur.execute("DELETE FROM raid_members WHERE raid_id = ? AND user_id = ?", (raid_id, user_id))
+    conn.commit()
+    conn.close()
+
+    embed = get_raid_embed(raid_id)
+    await interaction.response.edit_message(embed=embed)
+    await interaction.followup.send("✅ 신청을 취소했어요.", ephemeral=True)
+
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type == discord.InteractionType.component:
+        custom_id = interaction.data.get("custom_id", "")
+        if custom_id.startswith("raid_"):
+            parts = custom_id.split("_")
+            raid_id = int(parts[1])
+            action = "_".join(parts[2:])
+            if action == "cancel":
+                await handle_raid_cancel(interaction, raid_id)
+            else:
+                await handle_raid_join(interaction, raid_id, action)
+            return
+    await bot.process_application_commands(interaction)
+
+
+@bot.tree.command(name="공대생성", description="새 공대를 생성합니다. (관리자 전용)", guild=GUILD_ID)
+async def raid_create(
+    interaction: discord.Interaction,
+    공대이름: str,
+    시간: str,
+    비숍: int = 0,
+    달나: int = 0,
+    궁수: int = 0,
+    근격: int = 0,
+    원격: int = 0
+):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
+        return
+
+    import json
+    guild_id = str(interaction.guild.id)
+    slots = {"비숍": 비숍, "달나": 달나, "궁수": 궁수, "근격": 근격, "원격": 원격}
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO raids (guild_id, name, raid_time, slots, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (guild_id, 공대이름, 시간, json.dumps(slots, ensure_ascii=False), now))
+    raid_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    embed = get_raid_embed(raid_id)
+
+    # 버튼 생성
+    view = discord.ui.View(timeout=None)
+    for job in RAID_JOBS:
+        if slots.get(job, 0) == 0:
+            continue
+        btn = discord.ui.Button(
+            label=f"{job} 신청",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"raid_{raid_id}_{job}"
+        )
+        view.add_item(btn)
+
+    cancel_btn = discord.ui.Button(
+        label="❌ 신청 취소",
+        style=discord.ButtonStyle.danger,
+        custom_id=f"raid_{raid_id}_cancel"
+    )
+    view.add_item(cancel_btn)
+
+    await interaction.response.send_message(embed=embed, view=view)
+
+
+@bot.tree.command(name="공대강퇴", description="공대에서 특정 유저를 강제 퇴출합니다. (관리자 전용)", guild=GUILD_ID)
+async def raid_kick(
+    interaction: discord.Interaction,
+    공대id: int,
+    유저: discord.Member
+):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
+        return
+
+    user_id = str(유저.id)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT job FROM raid_members WHERE raid_id = ? AND user_id = ?", (공대id, user_id))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        await interaction.response.send_message(f"❌ {유저.mention}님은 해당 공대에 신청하지 않았어요.", ephemeral=True)
+        return
+
+    cur.execute("DELETE FROM raid_members WHERE raid_id = ? AND user_id = ?", (공대id, user_id))
+    conn.commit()
+    conn.close()
+
+    await interaction.response.send_message(f"✅ {유저.mention}님을 공대 #{공대id}에서 강제 퇴출했어요.")
+
+
+@bot.tree.command(name="공대목록", description="현재 공대 목록을 확인합니다.", guild=GUILD_ID)
+async def raid_list(interaction: discord.Interaction):
+    guild_id = str(interaction.guild.id)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, raid_time FROM raids WHERE guild_id = ? ORDER BY id DESC LIMIT 10", (guild_id,))
+    rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        await interaction.response.send_message("현재 생성된 공대가 없어요.")
+        return
+
+    text = "\n".join(f"`ID: {r[0]}` | **{r[1]}** | {r[2]}" for r in rows)
+    embed = discord.Embed(title="⚔️ 공대 목록", description=text, color=0x9B59B6)
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="공대삭제", description="공대를 삭제합니다. (관리자 전용)", guild=GUILD_ID)
+async def raid_delete(interaction: discord.Interaction, 공대id: int):
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM raid_members WHERE raid_id = ?", (공대id,))
+    cur.execute("DELETE FROM raids WHERE id = ?", (공대id,))
+    conn.commit()
+    conn.close()
+
+    await interaction.response.send_message(f"✅ 공대 #{공대id}를 삭제했어요.")
 
 
 # ─────────────────────────────────────────
