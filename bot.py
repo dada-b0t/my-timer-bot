@@ -50,50 +50,7 @@ async def on_ready():
 # 기부 시스템
 # ─────────────────────────────────────────
 
-@bot.tree.command(name="기부인증", description="길드 기부를 스크린샷과 함께 인증합니다.", guild=GUILD_ID)
-async def donate(interaction: discord.Interaction, 횟수: int, 스크린샷: discord.Attachment):
-    if 횟수 < 1:
-        await interaction.response.send_message("❌ 기부 횟수는 1회 이상이어야 해요.", ephemeral=True)
-        return
-    if not 스크린샷.content_type or not 스크린샷.content_type.startswith("image/"):
-        await interaction.response.send_message("❌ 스크린샷 이미지만 첨부할 수 있어요.", ephemeral=True)
-        return
-    guild_id = str(interaction.guild.id)
-    user_id = str(interaction.user.id)
-    username = interaction.user.display_name
-    image_url = 스크린샷.url
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    today = datetime.now().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT COUNT(*) FROM donations
-        WHERE guild_id = ? AND user_id = ? AND created_at LIKE ?
-        AND image_url != '관리자 수동 수정'
-    """, (guild_id, user_id, f"{today}%"))
-    already = cur.fetchone()[0]
-    if already > 0:
-        conn.close()
-        await interaction.response.send_message("❌ 오늘은 이미 기부를 등록했어요.", ephemeral=True)
-        return
-    cur.execute("""
-        INSERT INTO donations (guild_id, user_id, username, amount, image_url, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (guild_id, user_id, username, 횟수, image_url, now))
-    cur.execute("SELECT SUM(amount) FROM donations WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
-    total = cur.fetchone()[0] or 0
-    conn.commit()
-    conn.close()
-    embed = discord.Embed(title="💰 길드 기부 인증", color=0xF1C40F)
-    embed.add_field(name="👤 길드원", value=interaction.user.mention, inline=True)
-    embed.add_field(name="🎁 이번 기부", value=f"{횟수}회", inline=True)
-    embed.add_field(name="📊 누적 기부", value=f"{total}회", inline=True)
-    embed.add_field(name="🕒 인증 시간", value=now, inline=False)
-    embed.set_image(url=image_url)
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="기부대리등록", description="관리자가 다른 길드원의 기부 인증을 대신 등록합니다.", guild=GUILD_ID)
+@bot.tree.command(name="기부등록", description="관리자가 길드원의 기부 인증을 등록합니다.", guild=GUILD_ID)
 async def donation_proxy_register(interaction: discord.Interaction, 유저: discord.Member, 횟수: int, 스크린샷: discord.Attachment):
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message("❌ 관리자만 사용할 수 있어요.", ephemeral=True)
@@ -119,7 +76,7 @@ async def donation_proxy_register(interaction: discord.Interaction, 유저: disc
     total = cur.fetchone()[0] or 0
     conn.commit()
     conn.close()
-    embed = discord.Embed(title="💰 길드 기부 대리 등록", color=0xF1C40F)
+    embed = discord.Embed(title="💰 길드 기부 등록", color=0xF1C40F)
     embed.add_field(name="👤 길드원", value=유저.mention, inline=True)
     embed.add_field(name="📝 등록자", value=interaction.user.mention, inline=True)
     embed.add_field(name="🎁 이번 기부", value=f"{횟수}회", inline=True)
